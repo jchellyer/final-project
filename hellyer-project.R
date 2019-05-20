@@ -73,3 +73,34 @@ fhfa_sheet_test <- fhfa_sheet
 colnames(fhfa_sheet_test) <- c("zipcode", "year", "annualchg", "hpi", "hpi90", "hpi00")
 fhfa_sheet_test$zipcode <- as.numeric(fhfa_sheet_test$zipcode)
 fhfa_sheet_nyc <- subset(fhfa_sheet_test, subset = zipcode %in% zctas)
+
+# import data from Yelp (using lat-long search system, Brooklyn only)
+latsbk_20 <- seq(40.571474, 40.73911, length.out = 20)
+longsbk_20 <- seq(-73.855727, -74.04151, length.out = 20)
+
+food_bk_ll50 <- NULL
+
+for (lat in latsbk_50) {
+  for (long in longsbk_50) {
+    temp <- business_search(yelp_key, 
+                            latitude = lat,
+                            longitude = long,
+                            term = "restaurants",
+                            radius = 650) 
+    temp <- temp$businesses 
+    if(length(temp) > 0 && is.na(match('price', names(temp)))) {
+      temp$price <- NA
+    }
+    if(length(temp) > 0) {
+      temp <- temp %>%
+        mutate(zip = location$zip_code) %>%
+        mutate(lat = coordinates$latitude) %>%
+        mutate(long = coordinates$longitude) %>%
+        filter(zip %in% zctas_bk) %>%
+        select(alias, name, review_count, categories, rating, price, zip, lat, long)
+    }
+    food_bk_ll50 <- rbind(food_bk_ll50, temp)
+  }
+}
+
+food_bk_ll50 <- unique(food_bk_ll50)
