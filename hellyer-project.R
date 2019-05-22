@@ -4,6 +4,8 @@ library(censusapi)
 library(gdata)
 library(dplyr)
 library(readxl)
+library(yelpr)
+library(ggmap)
 
 # set up Census API
 cs_key <- "1f19c3a8ce87e6dd0f6058fc4cbb8edb8fba5bfb"
@@ -43,7 +45,7 @@ for (f in zctas) {
   census_zcta12 <- rbind(census_zcta12, temp)
 }
 
-# calculate percentages (using dplyr/tidyverse notation)
+# calculate percentages
 census_zcta_percs17 <- census_zcta17 %>%
   mutate(college = (B15003_022E + B15003_023E + B15003_024E + B15003_025E) / B01003_001E) %>%
   mutate(youngadult = (B01001_011E + B01001_012E + B01001_035E + B01001_036E) / B01003_001E) %>%
@@ -74,19 +76,19 @@ colnames(fhfa_sheet_test) <- c("zipcode", "year", "annualchg", "hpi", "hpi90", "
 fhfa_sheet_test$zipcode <- as.numeric(fhfa_sheet_test$zipcode)
 fhfa_sheet_nyc <- subset(fhfa_sheet_test, subset = zipcode %in% zctas)
 
-# import data from Yelp (using lat-long search system, Brooklyn only)
-latsbk_20 <- seq(40.571474, 40.73911, length.out = 20)
-longsbk_20 <- seq(-73.855727, -74.04151, length.out = 20)
+# import data from Yelp (using lat-long search system, max results, Brooklyn only)
+latsbk_70 <- seq(40.571474, 40.73911, length.out = 70)
+longsbk_70 <- seq(-73.855727, -74.04151, length.out = 70)
 
-food_bk_ll50 <- NULL
+food_bk_ll70 <- NULL
 
-for (lat in latsbk_50) {
-  for (long in longsbk_50) {
+for (lat in latsbk_70) {
+  for (long in longsbk_70) {
     temp <- business_search(yelp_key, 
                             latitude = lat,
                             longitude = long,
                             term = "restaurants",
-                            radius = 650) 
+                            radius = 380) 
     temp <- temp$businesses 
     if(length(temp) > 0 && is.na(match('price', names(temp)))) {
       temp$price <- NA
@@ -99,8 +101,12 @@ for (lat in latsbk_50) {
         filter(zip %in% zctas_bk) %>%
         select(alias, name, review_count, categories, rating, price, zip, lat, long)
     }
-    food_bk_ll50 <- rbind(food_bk_ll50, temp)
+    food_bk_ll70 <- rbind(food_bk_ll70, temp)
   }
 }
 
-food_bk_ll50 <- unique(food_bk_ll50)
+food_bk_ll70 <- unique(food_bk_ll70)
+
+# map restaurant results
+qmplot(long, lat, data = food_bk_ll70, maptype = "toner-lite", size = I(0.5),
+       alpha = I(0.45))
