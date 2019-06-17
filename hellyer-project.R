@@ -139,62 +139,50 @@ food_bk_zip <- unique(food_bk_zip)
 latsbk_70 <- seq(40.571474, 40.73911, length.out = 70)
 longsbk_70 <- seq(-73.855727, -74.04151, length.out = 70)
 
-food_bk_ll70 <- NULL
-
-for (lat in latsbk_70) {
-  for (long in longsbk_70) {
-    temp <- business_search(yelp_key, 
-                            latitude = lat,
-                            longitude = long,
-                            term = "restaurants",
-                            radius = 380) 
-    temp <- temp$businesses 
-    if(length(temp) > 0 && is.na(match('price', names(temp)))) {
-      temp$price <- NA
+# saving 70x70 search as function taking file name plus category names from Yelp documentation
+# https://www.yelp.com/developers/documentation/v3/all_category_list
+yelp70x70 <- function(filename, catname) {
+  savename <- deparse(substitute(filename))
+  filename <- NULL
+  
+  for (lat in latsbk_70) {
+    for (long in longsbk_70) {
+      temp <- business_search(yelp_key, 
+                              latitude = lat,
+                              longitude = long,
+                              categories = catname,
+                              radius = 380) 
+      temp <- temp$businesses 
+      if(length(temp) > 0 && is.na(match('price', names(temp)))) {
+        temp$price <- NA
+      }
+      if(length(temp) > 0) {
+        temp <- temp %>%
+          mutate(zip = location$zip_code) %>%
+          mutate(lat = coordinates$latitude) %>%
+          mutate(long = coordinates$longitude) %>%
+          filter(zip %in% zctas_bk) %>%
+          select(alias, name, review_count, categories, rating, price, zip, lat, long)
+      }
+      filename <- rbind(filename, temp)
     }
-    if(length(temp) > 0) {
-      temp <- temp %>%
-        mutate(zip = location$zip_code) %>%
-        mutate(lat = coordinates$latitude) %>%
-        mutate(long = coordinates$longitude) %>%
-        filter(zip %in% zctas_bk) %>%
-        select(alias, name, review_count, categories, rating, price, zip, lat, long)
-    }
-    food_bk_ll70 <- rbind(food_bk_ll70, temp)
   }
+  
+  filename <- unique(filename)
+  
+  saveRDS(filename, file = paste0(savename,'.rds'))
 }
 
-food_bk_ll70 <- unique(food_bk_ll70)
+# Yelp searches for restaurants, coffee shops, bars (70x70 grid):
+yelp70x70(food_bk_ll70,"restaurants")
+food_bk_ll70 <- readRDS("food_bk_ll70.rds")
 
-# Yelp search, 70x70 grid, coffee shops: 821 results
-coffee_bk_ll70 <- NULL
+yelp70x70(coffee_bk_ll70,"coffee")
+coffee_bk_ll70 <- readRDS("coffee_bk_ll70.rds")
 
-for (lat in latsbk_70) {
-  for (long in longsbk_70) {
-    temp <- business_search(yelp_key, 
-                            latitude = lat,
-                            longitude = long,
-                            categories = "coffee",
-                            radius = 380) 
-    temp <- temp$businesses 
-    if(length(temp) > 0 && is.na(match('price', names(temp)))) {
-      temp$price <- NA
-    }
-    if(length(temp) > 0) {
-      temp <- temp %>%
-        mutate(zip = location$zip_code) %>%
-        mutate(lat = coordinates$latitude) %>%
-        mutate(long = coordinates$longitude) %>%
-        filter(zip %in% zctas_bk) %>%
-        select(alias, name, review_count, categories, rating, price, zip, lat, long)
-    }
-    coffee_bk_ll70 <- rbind(coffee_bk_ll70, temp)
-  }
-}
+yelp70x70(bars_bk_ll70,"bars")
+bars_bk_ll70 <- readRDS("bars_bk_ll70.rds")
 
-coffee_bk_ll70 <- unique(coffee_bk_ll70)
-
-saveRDS(coffee_bk_ll70, "coffee_bk_ll70.rds")
 
 # map restaurant results
 qmplot(long, lat, data = food_bk_ll70, maptype = "toner-lite", size = I(0.5),
