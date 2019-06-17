@@ -96,7 +96,46 @@ fhfa_sheet_nyc <- subset(fhfa_sheet_test, subset = zipcode %in% zctas)
 yelp_key <- ""
 
 
-# import data from Yelp (using lat-long search system, max results, Brooklyn only)
+# Yelp search methods test, restaurants in radius from central point: 16 results
+food_bk_center <- NULL
+
+food_bk_center <- business_search(yelp_key, 
+                                  categories="restaurants",
+                                  latitude= 40.645970,
+                                  longitude= -73.957270,
+                                  radius = 11000)
+food_bk_center <- food_bk_center$businesses
+food_bk_center <- food_bk_center %>%
+  mutate(zip = location$zip_code) %>%
+  filter(zip %in% zctas_bk) %>%
+  mutate(lat = coordinates$latitude) %>%
+  mutate(long = coordinates$longitude) %>%
+  select(alias, name, review_count, categories, rating, price, zip, lat, long)
+
+food_bk_center <- unique(food_bk_center)
+
+# Yelp search methods test, restaurants by ZIP: 389 results
+food_bk_zip <- NULL
+
+for (f in zctas_bk) {
+  temp <- business_search(yelp_key, 
+                          location = f, 
+                          term = "restaurants",
+                          radius = 4000) 
+  temp <- temp$businesses
+  temp <- temp %>%
+    mutate(zip = location$zip_code) %>%
+    mutate(lat = coordinates$latitude) %>%
+    mutate(long = coordinates$longitude) %>%
+    filter(zip %in% zctas_bk) %>%
+    select(alias, name, review_count, categories, rating, price, zip, lat, long)
+  
+  food_bk_zip <- rbind(food_bk_zip, temp)
+}
+
+food_bk_zip <- unique(food_bk_zip)
+
+# Yelp search methods test, restaurants by 70x70 grid of search points: 4743 results (max)
 latsbk_70 <- seq(40.571474, 40.73911, length.out = 70)
 longsbk_70 <- seq(-73.855727, -74.04151, length.out = 70)
 
@@ -127,6 +166,35 @@ for (lat in latsbk_70) {
 
 food_bk_ll70 <- unique(food_bk_ll70)
 
+# Yelp search, 70x70 grid, coffee shops: 821 results
+coffee_bk_ll70 <- NULL
+
+for (lat in latsbk_70) {
+  for (long in longsbk_70) {
+    temp <- business_search(yelp_key, 
+                            latitude = lat,
+                            longitude = long,
+                            categories = "coffee",
+                            radius = 380) 
+    temp <- temp$businesses 
+    if(length(temp) > 0 && is.na(match('price', names(temp)))) {
+      temp$price <- NA
+    }
+    if(length(temp) > 0) {
+      temp <- temp %>%
+        mutate(zip = location$zip_code) %>%
+        mutate(lat = coordinates$latitude) %>%
+        mutate(long = coordinates$longitude) %>%
+        filter(zip %in% zctas_bk) %>%
+        select(alias, name, review_count, categories, rating, price, zip, lat, long)
+    }
+    coffee_bk_ll70 <- rbind(coffee_bk_ll70, temp)
+  }
+}
+
+coffee_bk_ll70 <- unique(coffee_bk_ll70)
+
+saveRDS(coffee_bk_ll70, "coffee_bk_ll70.rds")
 
 # map restaurant results
 qmplot(long, lat, data = food_bk_ll70, maptype = "toner-lite", size = I(0.5),
