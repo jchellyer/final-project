@@ -141,6 +141,7 @@ longsbk_70 <- seq(-73.855727, -74.04151, length.out = 70)
 
 # saving 70x70 search as function taking file name plus category names from Yelp documentation
 # https://www.yelp.com/developers/documentation/v3/all_category_list
+# reqs: grid of search points based on city lat-long coordinates, list of local ZIP codes
 yelp70x70 <- function(filename, catname) {
   savename <- deparse(substitute(filename))
   filename <- NULL
@@ -184,14 +185,32 @@ yelp70x70(bars_bk_ll70,"bars")
 bars_bk_ll70 <- readRDS("bars_bk_ll70.rds")
 
 
-# map restaurant results
+# map restaurant results from different search methods
 qmplot(long, lat, data = food_bk_ll70, maptype = "toner-lite", size = I(0.5),
        alpha = I(0.45))
 
+qmplot(long, lat, data = food_bk_ll10, maptype = "toner-lite", size = I(0.5),
+       alpha = I(0.45))
+
+qmplot(long, lat, data = food_bk_zip, maptype = "toner-lite", size = I(0.5),
+       alpha = I(0.45))
+
+qmplot(long, lat, data = food_bk_center, maptype = "toner-lite", size = I(0.5),
+       alpha = I(0.45))
+
+# map all results color-coded by type of establishment
+bars_bk_ll70$cat <- "bars"
+food_bk_ll70$cat <- "food"
+coffee_bk_ll70$cat <- "coffee"
+listings_bk_ll70 <- rbind(bars_bk_ll70, food_bk_ll70, coffee_bk_ll70)
+listings_bk_ll70 <- listings_bk_ll70[!duplicated(listings_bk_ll70$alias), ]
+
+qmplot(long, lat, data = listings_bk_ll70, maptype = "toner-lite", size = I(0.5),
+       alpha = I(0.45), color = cat)
 
 # sum and average reviews
-reviews_by_zip <- aggregate(food_bk_ll70$review_count, list(food_bk_ll70$zip), sum)
-ratings_by_zip <- aggregate(food_bk_ll70$rating, list(food_bk_ll70$zip), mean)
+reviews_by_zip <- aggregate(listings_bk_ll70$review_count, list(listings_bk_ll70$zip), sum)
+ratings_by_zip <- aggregate(listings_bk_ll70$rating, list(listings_bk_ll70$zip), mean)
 
 # plot reviews against poverty
 colnames(reviews_by_zip) <- c("zip_code_tabulation_area", "reviews")
@@ -199,4 +218,4 @@ reviews_pov <- merge(reviews_by_zip, census_zcta_percs17, by="zip_code_tabulatio
 
 ggplot(reviews_pov) +
   geom_point(aes(x = pov, y = reviews), size = 2) +
-  ylim(0, 65000)
+  ylim(0, 80000)
