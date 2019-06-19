@@ -219,3 +219,41 @@ reviews_pov <- merge(reviews_by_zip, census_zcta_percs17, by="zip_code_tabulatio
 ggplot(reviews_pov) +
   geom_point(aes(x = pov, y = reviews), size = 2) +
   ylim(0, 80000)
+
+# calculate change from 2012 to 2017 by ZCTA
+census_zcta_change <- cbind(census_zcta_percs17, census_zcta_percs12)
+census_zcta_change[,6] <- NULL # remove duplicate zcta column
+census_zcta_change <- census_zcta_change %>%
+  mutate(chg_college = college17 - college12) %>%
+  mutate(chg_youngadult = youngadult17 - youngadult12) %>%
+  mutate(chg_white = white17 - white12) %>%
+  mutate(chg_pov = pov17 - pov12) %>%
+  select(zip_code_tabulation_area, chg_college, chg_youngadult, chg_white, chg_pov)
+
+reviews_change <- merge(reviews_by_zip, census_zcta_change, by="zip_code_tabulation_area")
+
+ggplot(reviews_change) +
+  geom_point(aes(x = chg_pov, y = reviews), size = 2) +
+  ylim(0, 80000)
+
+# break up by price level and type of establishment
+reviews_by_cat <- group_by(listings_bk_ll70, zip, cat) %>% 
+  summarize(sum_cat = sum(review_count)) %>%
+  spread(cat, sum_cat) %>%
+  rename(zip_code_tabulation_area  = zip)
+
+reviews_by_price <- group_by(listings_bk_ll70, zip, price) %>%
+  summarize(sum_price = sum(review_count)) %>%
+  spread(price, sum_price) %>%
+  rename(price1 = `$`, price2 = `$$`, price3 = `$$$`, price4 = `$$$$`, priceNA = `<NA>`, zip_code_tabulation_area = zip) %>%
+  mutate(price3_4 = price3 + price4)
+
+reviews_change <- merge(reviews_change, reviews_by_cat, by="zip_code_tabulation_area")
+reviews_change <- merge(reviews_change, reviews_by_price, by="zip_code_tabulation_area")
+
+ggplot(reviews_change) +
+  geom_point(aes(x = chg_pov, y = bars), size = 2) +
+  ylim(0, 80000)
+
+reviews_change_corrs <- rcorr(as.matrix(reviews_change[,c(2:13,15)]))
+
