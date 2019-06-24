@@ -6,6 +6,8 @@ library(dplyr)
 library(readxl)
 library(yelpr)
 library(ggmap)
+library(Hmisc)
+library(reshape2)
 
 
 # set up Census API
@@ -24,7 +26,7 @@ zctas_bk <- zcta_sheet %>%
   filter(grepl('Brooklyn', borough)) %>%
   distinct(zcta10)
 zctas_bk <- as.double(zctas_bk$zcta10)
-
+zctas_bk <- zctas_bk[1:37] # delete empty ZIP
 
 # import desired values from Census API
 census_zcta17 <- NULL
@@ -59,38 +61,37 @@ for (f in zctas_bk) {
 
 # calculate percentages
 census_zcta_percs17 <- census_zcta17 %>%
-  mutate(college = (B15003_022E + B15003_023E + B15003_024E + B15003_025E) / B01003_001E) %>%
-  mutate(youngadult = (B01001_011E + B01001_012E + B01001_035E + B01001_036E) / B01003_001E) %>%
-  mutate(white = B03002_003E / B01003_001E) %>%
-  mutate(pov = B17001_002E / B01003_001E) %>%
-  select(zip_code_tabulation_area, college, youngadult, white, pov)
+  mutate(college17 = (B15003_022E + B15003_023E + B15003_024E + B15003_025E) / B01003_001E) %>%
+  mutate(youngadult17 = (B01001_011E + B01001_012E + B01001_035E + B01001_036E) / B01003_001E) %>%
+  mutate(white17 = B03002_003E / B01003_001E) %>%
+  mutate(pov17 = B17001_002E / B01003_001E) %>%
+  select(zip_code_tabulation_area, college17, youngadult17, white17, pov17)
 
 census_zcta_percs12 <- census_zcta12 %>%
-  mutate(college = (B15003_022E + B15003_023E + B15003_024E + B15003_025E) / B01003_001E) %>%
-  mutate(youngadult = (B01001_011E + B01001_012E + B01001_035E + B01001_036E) / B01003_001E) %>%
-  mutate(white = B03002_003E / B01003_001E) %>%
-  mutate(pov = B17001_002E / B01003_001E) %>%
-  select(zip_code_tabulation_area, college, youngadult, white, pov)
+  mutate(college12 = (B15003_022E + B15003_023E + B15003_024E + B15003_025E) / B01003_001E) %>%
+  mutate(youngadult12 = (B01001_011E + B01001_012E + B01001_035E + B01001_036E) / B01003_001E) %>%
+  mutate(white12 = B03002_003E / B01003_001E) %>%
+  mutate(pov12 = B17001_002E / B01003_001E) %>%
+  select(zip_code_tabulation_area, college12, youngadult12, white12, pov12)
 
 head(census_zcta_percs17)
 head(census_zcta_percs12)
 
-# deal with NAs?
 
 # import data from FHFA
 url <- "https://www.fhfa.gov/DataTools/Downloads/Documents/HPI/HPI_AT_BDL_ZIP5.xlsx"
 destfile <- "fhfa_sheet.xlsx"
 curl::curl_download(url, destfile)
 fhfa_sheet <- read_excel(destfile, skip = 6)
-view(fhfa_sheet)
-
 
 # FHFA data preparation
-fhfa_sheet_test <- fhfa_sheet
-colnames(fhfa_sheet_test) <- c("zipcode", "year", "annualchg", "hpi", "hpi90", "hpi00")
-fhfa_sheet_test$zipcode <- as.numeric(fhfa_sheet_test$zipcode)
-fhfa_sheet_nyc <- subset(fhfa_sheet_test, subset = zipcode %in% zctas)
+colnames(fhfa_sheet) <- c("zipcode", "year", "annualchg", "hpi", "hpi90", "hpi00")
+fhfa_sheet$zipcode <- as.numeric(fhfa_sheet$zipcode)
+fhfa_sheet_bk <- subset(fhfa_sheet, subset = zipcode %in% zctas_bk)
 
+fhfa_sheet_bk_1317 <- fhfa_sheet_bk %>% filter((year > 2012) & (year < 2018))
+fhfa_sheet_bk_1317$annualchg <- as.numeric(fhfa_sheet_bk_1317$annualchg)
+fhfa_sheet_bk_1317$hpi <- as.numeric(fhfa_sheet_bk_1317$hpi)
 
 # import data from Yelp API
 yelp_key <- ""
@@ -238,12 +239,12 @@ ggplot(reviews_change) +
 
 # break up by price level and type of establishment
 reviews_by_cat <- group_by(listings_bk_ll70, zip, cat) %>% 
-  summarize(sum_cat = sum(review_count)) %>%
+  dplyr::summarize(sum_cat = sum(review_count)) %>%
   spread(cat, sum_cat) %>%
-  rename(zip_code_tabulation_area  = zip)
+  rename(zip_code_tabulation_area = zip)
 
 reviews_by_price <- group_by(listings_bk_ll70, zip, price) %>%
-  summarize(sum_price = sum(review_count)) %>%
+  dplyr::summarize(sum_price = sum(review_count)) %>%
   spread(price, sum_price) %>%
   rename(price1 = `$`, price2 = `$$`, price3 = `$$$`, price4 = `$$$$`, priceNA = `<NA>`, zip_code_tabulation_area = zip) %>%
   mutate(price3_4 = price3 + price4)
@@ -252,8 +253,19 @@ reviews_change <- merge(reviews_change, reviews_by_cat, by="zip_code_tabulation_
 reviews_change <- merge(reviews_change, reviews_by_price, by="zip_code_tabulation_area")
 
 ggplot(reviews_change) +
-  geom_point(aes(x = chg_pov, y = bars), size = 2) +
+  geom_point(aes(x = chg_pov, y = reviews), size = 2) +
   ylim(0, 80000)
 
 reviews_change_corrs <- rcorr(as.matrix(reviews_change[,c(2:13,15)]))
 
+# FHFA correlations
+fhfa_hpi_bk_1317 <- dcast(fhfa_sheet_bk_1317, zipcode ~ year, value.var = "hpi")
+fhfa_hpi_bk_1317 <- fhfa_hpi_bk_1317 %>%
+  mutate(pctchg1317 = (fhfa_hpi_bk_1317$`2017` - fhfa_hpi_bk_1317$`2013`) / fhfa_hpi_bk_1317$`2013`) %>%
+  rename(zip_code_tabulation_area = zipcode)
+
+reviews_change_fhfa <- merge(reviews_change, fhfa_hpi_bk_1317, by="zip_code_tabulation_area")
+
+ggplot(reviews_change_fhfa, aes(pctchg1317, reviews)) +
+  geom_point(size = 2) +
+  geom_smooth(method = "lm")
