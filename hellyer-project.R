@@ -262,11 +262,16 @@ reviews_change_corrs <- rcorr(as.matrix(reviews_change[,c(2:13,15)]))
 fhfa_hpi_bk_1317 <- dcast(fhfa_sheet_bk_1317, zipcode ~ year, value.var = "hpi")
 fhfa_hpi_bk_1317 <- fhfa_hpi_bk_1317 %>%
   mutate(pctchg1317 = (fhfa_hpi_bk_1317$`2017` - fhfa_hpi_bk_1317$`2013`) / fhfa_hpi_bk_1317$`2013`) %>%
-  rename(zip_code_tabulation_area = zipcode)
+  rename(zip_code_tabulation_area = zipcode, hpi13 = `2013`, hpi14 = `2014`, hpi15 = `2015`, 
+         hpi16 = `2016`, hpi17 = `2017`)
 
 reviews_change_fhfa <- merge(reviews_change, fhfa_hpi_bk_1317, by="zip_code_tabulation_area")
 
 ggplot(reviews_change_fhfa, aes(pctchg1317, reviews)) +
+  geom_point(size = 2) +
+  geom_smooth(method = "lm")
+
+ggplot(reviews_change_fhfa, aes(hpi17, reviews)) +
   geom_point(size = 2) +
   geom_smooth(method = "lm")
 
@@ -283,3 +288,17 @@ listings_count <- merge(listings_count, fhfa_hpi_bk_1317, by="zip_code_tabulatio
 ggplot(listings_count, aes(chg_pov, total)) +
   geom_point(size = 2) +
   geom_smooth(method = "lm")
+
+ggplot(listings_count, aes(pctchg1317, total)) +
+  geom_point(size = 2) +
+  geom_smooth(method = "lm")
+
+# complete correlation table
+allvars_bk <- merge(listings_count, reviews_change, by="zip_code_tabulation_area")
+allvars_bk <- allvars_bk %>%
+  select(-c(chg_college.y,chg_youngadult.y,chg_white.y,chg_pov.y,hpi13,hpi14,hpi15,hpi16,priceNA)) %>%
+  rename(bars_reviews = bars, coffee_reviews = coffee, food_reviews = food, hpichg1317 = pctchg1317)
+
+allcorrs_bk <- rcorr(as.matrix(allvars_bk[2:20]))
+corrplot(allcorrs_bk$r, type="upper", order="alphabet", 
+         p.mat = allcorrs_bk$P, sig.level = 0.05, insig = "blank")
