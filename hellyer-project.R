@@ -269,3 +269,17 @@ reviews_change_fhfa <- merge(reviews_change, fhfa_hpi_bk_1317, by="zip_code_tabu
 ggplot(reviews_change_fhfa, aes(pctchg1317, reviews)) +
   geom_point(size = 2) +
   geom_smooth(method = "lm")
+
+# add number of establishments
+listings_count <- listings_bk_ll70 %>%
+  count(zip,cat) %>%
+  spread(cat,n) %>%
+  mutate(total = bars + coffee + food) %>%
+  rename(zip_code_tabulation_area = zip)
+
+listings_count <- merge(listings_count, census_zcta_change, by="zip_code_tabulation_area")
+listings_count <- merge(listings_count, fhfa_hpi_bk_1317, by="zip_code_tabulation_area")
+
+ggplot(listings_count, aes(chg_pov, total)) +
+  geom_point(size = 2) +
+  geom_smooth(method = "lm")
