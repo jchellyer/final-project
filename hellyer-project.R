@@ -10,8 +10,8 @@ library(Hmisc)
 library(reshape2)
 
 
-# set up Census API
-cs_key <- ""
+# set up Census API: insert own Census API key here
+# cs_key <- ""
 
 
 # establish list of ZCTAs for NYC
@@ -93,8 +93,8 @@ fhfa_sheet_bk_1317 <- fhfa_sheet_bk %>% filter((year > 2012) & (year < 2018))
 fhfa_sheet_bk_1317$annualchg <- as.numeric(fhfa_sheet_bk_1317$annualchg)
 fhfa_sheet_bk_1317$hpi <- as.numeric(fhfa_sheet_bk_1317$hpi)
 
-# import data from Yelp API
-yelp_key <- ""
+# import data from Yelp API: insert own Yelp API key here
+# yelp_key <- ""
 
 
 # Yelp search methods test, restaurants in radius from central point: 16 results
@@ -135,6 +135,37 @@ for (f in zctas_bk) {
 }
 
 food_bk_zip <- unique(food_bk_zip)
+
+# Yelp search methods test, restaurants by 10x10 search grid w/radius 1000: 905 results
+latsbk_10 <- seq(40.571474, 40.73911, length.out = 10)
+longsbk_10 <- seq(-73.855727, -74.04151, length.out = 10)
+
+food_bk_ll10 <- NULL
+
+for (lat in latsbk_10) {
+  for (long in longsbk_10) {
+    temp <- business_search(yelp_key, 
+                            latitude = lat,
+                            longitude = long,
+                            term = "restaurants",
+                            radius = 1000) 
+    temp <- temp$businesses 
+    if(length(temp) > 0 && is.na(match('price', names(temp)))) {
+      temp$price <- NA
+    }
+    if(length(temp) > 0) {
+      temp <- temp %>%
+        mutate(zip = location$zip_code) %>%
+        mutate(lat = coordinates$latitude) %>%
+        mutate(long = coordinates$longitude) %>%
+        filter(zip %in% zctas_bk) %>%
+        select(alias, name, review_count, categories, rating, price, zip, lat, long)
+    }
+    food_bk_ll10 <- rbind(food_bk_ll10, temp)
+  }
+}
+
+food_bk_ll10 <- unique(food_bk_ll10)
 
 # Yelp search methods test, restaurants by 70x70 grid of search points: 4743 results (max)
 latsbk_70 <- seq(40.571474, 40.73911, length.out = 70)
@@ -233,9 +264,10 @@ census_zcta_change <- census_zcta_change %>%
 
 reviews_change <- merge(reviews_by_zip, census_zcta_change, by="zip_code_tabulation_area")
 
-ggplot(reviews_change) +
-  geom_point(aes(x = chg_pov, y = reviews), size = 2) +
-  ylim(0, 80000)
+ggplot(reviews_change, aes(chg_pov, reviews)) +
+  geom_point(size = 2) +
+  ylim(0, 80000) +
+  geom_smooth(method = "lm")
 
 # break up by price level and type of establishment
 reviews_by_cat <- group_by(listings_bk_ll70, zip, cat) %>% 
@@ -246,15 +278,13 @@ reviews_by_cat <- group_by(listings_bk_ll70, zip, cat) %>%
 reviews_by_price <- group_by(listings_bk_ll70, zip, price) %>%
   dplyr::summarize(sum_price = sum(review_count)) %>%
   spread(price, sum_price) %>%
-  rename(price1 = `$`, price2 = `$$`, price3 = `$$$`, price4 = `$$$$`, priceNA = `<NA>`, zip_code_tabulation_area = zip) %>%
+  rename(price1 = `$`, price2 = `$$`, price3 = `$$$`, price4 = `$$$$`, priceNA = `<NA>`,
+         zip_code_tabulation_area = zip) %>%
+  mutate_all(~replace(., is.na(.), 0)) %>%
   mutate(price3_4 = price3 + price4)
 
 reviews_change <- merge(reviews_change, reviews_by_cat, by="zip_code_tabulation_area")
 reviews_change <- merge(reviews_change, reviews_by_price, by="zip_code_tabulation_area")
-
-ggplot(reviews_change) +
-  geom_point(aes(x = chg_pov, y = reviews), size = 2) +
-  ylim(0, 80000)
 
 reviews_change_corrs <- rcorr(as.matrix(reviews_change[,c(2:13,15)]))
 
@@ -297,7 +327,9 @@ ggplot(listings_count, aes(pctchg1317, total)) +
 allvars_bk <- merge(listings_count, reviews_change, by="zip_code_tabulation_area")
 allvars_bk <- allvars_bk %>%
   select(-c(chg_college.y,chg_youngadult.y,chg_white.y,chg_pov.y,hpi13,hpi14,hpi15,hpi16,priceNA)) %>%
-  rename(bars_reviews = bars, coffee_reviews = coffee, food_reviews = food, hpichg1317 = pctchg1317)
+  rename(bars_reviews = bars, coffee_reviews = coffee, food_reviews = food, 
+         hpichg1317 = pctchg1317, chg_college = chg_college.x, 
+         chg_youngadult = chg_youngadult.x, chg_white = chg_white.x, chg_pov = chg_pov.x)
 
 allcorrs_bk <- rcorr(as.matrix(allvars_bk[2:20]))
 corrplot(allcorrs_bk$r, type="upper", order="alphabet", 
