@@ -11,6 +11,8 @@ library(reshape2)
 library(corrplot)
 library(jtools)
 library(ggstance)
+library(tidyr)
+library(huxtable)
 
 # set up Census API: insert own Census API key here
 # cs_key <- ""
@@ -321,7 +323,7 @@ listings_count <- listings_bk_ll70 %>%
   rename(zip_code_tabulation_area = zip)
 
 listings_count <- merge(listings_count, census_zcta_change, by="zip_code_tabulation_area")
-listings_count <- merge(listings_count, fhfa_hpi_bk_1317, by="zip_code_tabulation_area")
+listings_count <- merge(listings_count, fhfa_hpi_bk_1317, by="zip_code_tabulation_area", all= TRUE)
 
 ggplot(listings_count, aes(chg_college, total)) +
   geom_point(size = 2) +
@@ -335,12 +337,13 @@ ggplot(listings_count, aes(pctchg1317, total)) +
 allvars_bk <- merge(listings_count, reviews_change, by="zip_code_tabulation_area")
 allvars_bk <- allvars_bk %>%
   select(-c(chg_college.y,chg_youngadult.y,chg_white.y,chg_pov.y,hpi13,hpi14,hpi15,hpi16,priceNA)) %>%
-  rename(bars_reviews = bars, coffee_reviews = coffee, food_reviews = food, 
+  rename(bars_reviews = bars.x, coffee_reviews = coffee.x, food_reviews = food.x,
+         bars_count = bars.y, coffee_count = coffee.y, food_count = food.y,
          hpichg1317 = pctchg1317, chg_college = chg_college.x, 
          chg_youngadult = chg_youngadult.x, chg_white = chg_white.x, chg_pov = chg_pov.x)
 
 allcorrs_bk <- rcorr(as.matrix(allvars_bk[2:20]))
-corrplot(allcorrs_bk$r, type="upper", order="alphabet", 
+corrplot(allcorrs_bk$r, type="upper", order="alphabet", method="color", 
          p.mat = allcorrs_bk$P, sig.level = 0.05, insig = "blank")
 saveRDS(allvars_bk, "allvars_bk.rds")
 
@@ -357,12 +360,18 @@ lm_hpiprice <- lm(hpichg1317 ~ price1 + price2 + price3 + price4, data = allvars
 summary(lm_hpiprice)
 lm_povprice <- lm(chg_pov ~ price1 + price2 + price3 + price4, data = allvars_bk)
 summary(lm_povprice)
+lm_povcount <- lm(chg_pov ~ bars_count + coffee_count + food_count, data = allvars_bk)
+summary(lm_povcount)
 lm_collegereviews <- lm(chg_college ~ bars_reviews + coffee_reviews + food_reviews, data = allvars_bk)
 summary(lm_collegereviews)
+export_summs(lm_collegereviews, digits = 4)
+lm_collegecount <- lm(chg_college ~ bars_count + coffee_count + food_count, data = allvars_bk)
+summary(lm_collegecount)
 lm_youngcount <- lm(chg_youngadult ~ bars_count + coffee_count + food_count, data = allvars_bk)
 summary(lm_youngcount)
 lm_youngreviews <- lm(chg_youngadult ~ bars_reviews + coffee_reviews + food_reviews, data = allvars_bk)
 summary(lm_youngreviews)
 lm_youngprice <- lm(chg_youngadult ~  price1 + price2 + price3 + price4, data = allvars_bk)
 summary(lm_youngprice)
-plot_summs(lm_youngcount, lm_youngreviews)
+plot_summs(lm_povcount, lm_povreviews)
+export_summs(lm_youngcount, lm_youngreviews)
