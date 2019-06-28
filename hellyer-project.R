@@ -8,7 +8,9 @@ library(yelpr)
 library(ggmap)
 library(Hmisc)
 library(reshape2)
-
+library(corrplot)
+library(jtools)
+library(ggstance)
 
 # set up Census API: insert own Census API key here
 # cs_key <- ""
@@ -166,6 +168,7 @@ for (lat in latsbk_10) {
 }
 
 food_bk_ll10 <- unique(food_bk_ll10)
+saveRDS(food_bk_ll10, file = "food_bk_ll10.rds")
 
 # Yelp search methods test, restaurants by 70x70 grid of search points: 4743 results (max)
 latsbk_70 <- seq(40.571474, 40.73911, length.out = 70)
@@ -236,6 +239,7 @@ food_bk_ll70$cat <- "food"
 coffee_bk_ll70$cat <- "coffee"
 listings_bk_ll70 <- rbind(bars_bk_ll70, food_bk_ll70, coffee_bk_ll70)
 listings_bk_ll70 <- listings_bk_ll70[!duplicated(listings_bk_ll70$alias), ]
+saveRDS(listings_bk_ll70, file = 'listings_bk_ll70.rds')
 
 qmplot(long, lat, data = listings_bk_ll70, maptype = "toner-lite", size = I(0.5),
        alpha = I(0.45), color = cat)
@@ -247,10 +251,11 @@ ratings_by_zip <- aggregate(listings_bk_ll70$rating, list(listings_bk_ll70$zip),
 # plot reviews against poverty
 colnames(reviews_by_zip) <- c("zip_code_tabulation_area", "reviews")
 reviews_pov <- merge(reviews_by_zip, census_zcta_percs17, by="zip_code_tabulation_area")
+saveRDS(reviews_pov, file = "reviews_pov.rds")
 
-ggplot(reviews_pov) +
-  geom_point(aes(x = pov, y = reviews), size = 2) +
-  ylim(0, 80000)
+ggplot(reviews_pov, aes(pov,reviews)) +
+  geom_point(size = 2) +
+  geom_text(aes(label=ifelse(reviews > 60000, as.character("Williamsburg"),''),hjust=1.1))
 
 # calculate change from 2012 to 2017 by ZCTA
 census_zcta_change <- cbind(census_zcta_percs17, census_zcta_percs12)
@@ -266,7 +271,10 @@ reviews_change <- merge(reviews_by_zip, census_zcta_change, by="zip_code_tabulat
 
 ggplot(reviews_change, aes(chg_pov, reviews)) +
   geom_point(size = 2) +
-  ylim(0, 80000) +
+  geom_smooth(method = "lm")
+
+ggplot(reviews_change, aes(chg_college, reviews)) +
+  geom_point(size = 2) +
   geom_smooth(method = "lm")
 
 # break up by price level and type of establishment
@@ -315,7 +323,7 @@ listings_count <- listings_bk_ll70 %>%
 listings_count <- merge(listings_count, census_zcta_change, by="zip_code_tabulation_area")
 listings_count <- merge(listings_count, fhfa_hpi_bk_1317, by="zip_code_tabulation_area")
 
-ggplot(listings_count, aes(chg_pov, total)) +
+ggplot(listings_count, aes(chg_college, total)) +
   geom_point(size = 2) +
   geom_smooth(method = "lm")
 
@@ -334,3 +342,27 @@ allvars_bk <- allvars_bk %>%
 allcorrs_bk <- rcorr(as.matrix(allvars_bk[2:20]))
 corrplot(allcorrs_bk$r, type="upper", order="alphabet", 
          p.mat = allcorrs_bk$P, sig.level = 0.05, insig = "blank")
+saveRDS(allvars_bk, "allvars_bk.rds")
+
+# model tests
+lm_povreviews <- lm(chg_pov ~ reviews, data = allvars_bk)
+summary(lm_povreviews)
+lm_hpireviews <- lm(hpichg1317 ~ reviews, data = allvars_bk)
+summary(lm_hpireviews)
+lm_povreviewstype <- lm(chg_pov ~ bars_reviews + coffee_reviews + food_reviews, data = allvars_bk)
+summary(lm_povreviewstype)
+lm_hpireviewstype <- lm(hpichg1317 ~ bars_reviews + coffee_reviews + food_reviews, data = allvars_bk)
+summary(lm_hpireviewstype)
+lm_hpiprice <- lm(hpichg1317 ~ price1 + price2 + price3 + price4, data = allvars_bk)
+summary(lm_hpiprice)
+lm_povprice <- lm(chg_pov ~ price1 + price2 + price3 + price4, data = allvars_bk)
+summary(lm_povprice)
+lm_collegereviews <- lm(chg_college ~ bars_reviews + coffee_reviews + food_reviews, data = allvars_bk)
+summary(lm_collegereviews)
+lm_youngcount <- lm(chg_youngadult ~ bars_count + coffee_count + food_count, data = allvars_bk)
+summary(lm_youngcount)
+lm_youngreviews <- lm(chg_youngadult ~ bars_reviews + coffee_reviews + food_reviews, data = allvars_bk)
+summary(lm_youngreviews)
+lm_youngprice <- lm(chg_youngadult ~  price1 + price2 + price3 + price4, data = allvars_bk)
+summary(lm_youngprice)
+plot_summs(lm_youngcount, lm_youngreviews)
