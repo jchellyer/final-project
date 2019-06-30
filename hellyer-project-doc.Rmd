@@ -1,0 +1,264 @@
+---
+title: "'Nowcasting Gentrification' with Publicly Accessible Data"
+subtitle: "Toward Simpler Predictions of Neighborhood Change Using Yelp"
+author: "Joshua Hellyer"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: yes
+    df_print: kable
+bibliography: exportlist.bib
+---
+
+```{r, include = FALSE}
+library(censusapi)
+library(gdata)
+library(dplyr)
+library(readxl)
+library(yelpr)
+library(ggmap)
+library(Hmisc)
+library(reshape2)
+library(corrplot)
+library(jtools)
+library(ggstance)
+library(tidyr)
+library(huxtable)
+```
+
+## Introduction
+
+Over the past few decades, gentrification has become a topic of great concern among urban planners and social scientists alike. What was once a niche concern affecting only some neighborhoods in a few global megacities is now a phenomenon documented in diverse communities across the world, from Leipzig, Germany [@Haase15], to rural Montana in the western US [@Ghose04] and Salvador da Bahia, Brazil [@Nobre02]. However, despite the scholarly attention, no critical consensus has emerged on what policies might most effectively counter the negative impacts of gentrification on low-income communities. A lack of quality information contributes to this problem: gentrification remains challenging to define, let alone measure [@Barton16]. Furthermore, a lack of real-time data means that communities are forced to react to gentrification once it becomes visible rather than taking proactive measures to avoid it [@Glaeser18]. This subjects low-income communities to displacement and other harms that could potentially be mitigated with proper warning.
+
+One promising new source of real-time data is social media, a source which has recently been used by a handful of researchers looking to measure gentrification with non-census-based measures [@Gibbons18; @Glaeser18; @Hristova16; @Hristova18]. While these measures have proven effective at identifying gentrifying neighborhoods, they remain technologically challenging and may rely on proprietary data sources, putting these methods out of reach for the average city planner or policymaker. In this paper, I will attempt to adapt Glaeser, Kim, and Luca’s Yelp-based methodology [-@Glaeser18] using only publicly available information from Yelp and simplified analysis in R with the aim of creating a simple model to identify neighborhoods at risk of gentrification before such change occurs. In the sections that follow, I will provide a brief overview of past research on gentrification, describe my data and data collection process, and discuss my findings and conclusions based on an example case of the New York City borough of Brooklyn. Complete code and selected pre-downloaded data is available at the GitHub repository for this project: [https://github.com/jchellyer/final-project](https://github.com/jchellyer/final-project).
+
+## Background
+
+The term “gentrification” was coined by @Glass64, who used it to describe a process of upper-middle-class “gentry” moving into central London neighborhoods and thereby displacing the working-class former occupants of these communities. Since then, academics have disagreed about the definition of the term and the breadth of what it describes. Glass’ definition still generally fits the modern conception of gentrification, although Shaw [-@Shaw08, p. 1698] modernizes the term as “a generalised middle-class restructuring of place, encompassing the entire transformation from low-status neighbourhoods to upper-middle-class playgrounds” and paints a vivid picture of Western gentrification as it is commonly experienced in the 2000s:
+
+> Its defining feature is conspicuous cultural consumption. Designer shops, art galleries, bars and restaurants form the background to a landscape of people in semi-public space (tables on the footpath they must pay to occupy) watching the passing parade and sipping chardonnay from a boutique winery, beer from a microbrewery, coffee from organic beans grown in the developing country *du jour*.
+
+Rather than a process purely defined by displacement of the working class, Shaw’s conception highlights the changes in physical appearance, neighborhood character, and local business that are commonly experienced in gentrifying neighborhoods. This conception aligns with Clark’s [-@Clark05] definition, which includes both an influx of higher-class residents as well as changes in the built environment. Still other researchers do not consider displacement to be an essential part of gentrification, focusing instead on the type of urban reshaping described by Shaw [@Newman06]. @Barton16 notes that definitions often vary by the operationalization of the study, such that quantitative studies use demographic change-based definitions (i.e. changes in racial makeup, age, or income) as data has been more widely available to assess these changes relative to more nebulously defined factors like changes in neighborhood character. The present study will also rely on demographic data but will combine it with indicators of neighborhood change derived from Yelp data, thus aligning with definitions by Shaw and Clark.
+
+Given the state of the debate surrounding the term “gentrification” itself, it is unsurprising that there is also robust debate on its effects. Although researchers have been studying gentrification for nearly 50 years, there is still limited consensus on both the potential outcomes of gentrification as well as their extent. Conflicting viewpoints complicate the debate even further: what one observer might see as “neighborhood revitalization” may look like gentrification to another, and effects like rising home prices will benefit some (existing homeowners) at the expense of others (lower-income renters, future homebuyers). Some have even argued that the positive neighborhood effects outweigh any negatives for low-income households, and that low-income people would be helped by gentrification [@Vigdor02]. In his systematic review of gentrification literature, @Atkinson04 finds evidence of both positive and negative effects: property rehabilitation, increased fiscal revenues, increased diversity, and the stabilization of precarious neighborhoods; but also displacement (residential, commercial, and industrial), stress, community conflict, homelessness, and population loss. Researchers have also found potential negative effects on health [@Gibbons16; @Shmool15] and on a sense of community and social fabric, especially for minority residents [@Betancur11; @Gibbons19].
+
+Perhaps the most controversial potential outcome of gentrification is displacement, or the involuntary relocation of low-income and working-class people due to increasing housing costs, evictions, or harassment by landlords [@Atkinson04]. Despite its central role in many definitions of gentrification, displacement has not been extensively quantified, perhaps owing to the methodological challenges inherent in distinguishing between involuntary and voluntary moves, tracking displaced residents, and determining outcomes for displaced people [@Shaw08]. As Newman and Wyly [-@Newman06, p. 27] put it: “By definition, displaced residents have disappeared from the very places where researchers or census-takers go to look for them.” Nonetheless, a majority of the existing literature supports the notion that displacement is a significant outcome of gentrification, even if estimates of its extent differ widely [@Atkinson04; @Zuk15). Furthermore, in-migrants to gentrifying areas tend to be relatively wealthy, highly educated, and white, while out-migrants tend to be relatively poor people of color [@Zuk15]. Some counterarguments exist, such as Freeman and Braconi’s [-@Freeman04] much-discussed findings that low-income people are less likely to move during periods of gentrification. However, it has been argued that this finding neglects the opportunity structure of housing options, ignoring the fact that low-income tenants may want to move but cannot find reasonable or affordable alternatives [@Slater06]. While debates over methodology and definitions continue, the available evidence points to the existence of displacement as a significant driver of gentrification-related neighborhood change.
+
+### Social media and gentrification
+
+As already noted, a major barrier to further research on gentrification is the availability of quality data. Existing sources of data on moves often lack detailed information about the reasons for a move or where a family is moving from, and data is often aggregated to levels that make it unusable for local analysis [@Zuk15]. Further, data is not available in real time, making it difficult to assess neighborhood change as it occurs or predict gentrification before it begins. An emerging response to this challenge is the use of social media data, a relatively new form of “big data” that often provides localized, real-time information about people and communities on a variety of topics. A few researchers have used “geo-tagged” social media data (posts in which users “tag” where they are currently located) linking people to specific places and times to study and even attempt to predict gentrification in cities in the United States and the United Kingdom. Because the number of studies linking gentrification to social media is very small, I will briefly review each to explore the types of questions social media data can help answer.
+
+Perhaps the first use of social media data to analyze gentrification was Schaefer’s [-@Schaefer14] thesis using geotagged posts on Twitter (“tweets”) to predict displacement in Los Angeles. Schaefer mapped tweets that contained a variety of gentrification-related words and compared the output to a map of demographic changes in the city. He found that there was a higher density of tweets in areas where neighborhood revitalization projects had recently been completed, suggesting that these neighborhoods could be at risk of gentrification. Overall, the results showed the promise of social media for the study of gentrification: he found that the tweet-based analysis was just as effective as more traditional census-based methods of predicting gentrification, while also allowing for greater geographic and temporal precision.
+
+Another line of research analyzes the role of art and culture in gentrification using data from image hosting site Flickr. Both @Seresinhe16 and @Hristova18 use Flickr to identify the content of geotagged photographs posted to the service, with a particular focus on identifying posts related to art and cultural amenities. Seresinhe et al. find that London neighborhoods with a greater proportion of posts related to art tended to have higher increases in housing prices. Hristova et al. come to similar but broader conclusions, finding that neighborhoods with more posts about all types of cultural amenities (including music venues, theatres, etc.) also tend to show increases in housing prices and increasing proportions of higher-wealth residents. 
+
+Two additional studies used social media to map out social networks across physical locations, connecting aspects of these networks to a higher risk for gentrification and displacement. First, @Hristova16 connected tweets from Twitter and venue listings on popular search-and-discovery app Foursquare to map the diversity of social networks within communities across London. Using geotagged tweets mapped over measures of social deprivation, they find that venues in gentrifying communities tend to attract more diverse visitors. Here, social media data helped identify communities that suddenly begin to attract more affluent visitors from outside the neighborhood. This phenomenon was also found in a later study by @Gibbons18, who also used geotagged tweets to analyze social networks’ impact on gentrification in Washington, DC. They use geotagged tweets to construct “location-based interactions,” or instances of two users that are connected on Twitter tweeting from the same place at roughly the same time. Places that have a higher density of these location-based interactions tended to be located in gentrifying communities, and these posts tended to include keywords related to specific bars and restaurants. This points to the relationship between local venues like eating and drinking establishments and gentrification and suggests that new restaurants may draw people to neighborhoods with a higher level of deprivation and ultimately contribute to the gentrification of their communities.
+
+The connection between restaurants and gentrification is also the focus of a study by @Glaeser18 which will be investigated here in greater detail. Glaeser et al. combine venue listings from Yelp with indicators of neighborhood demographic change and housing price increases from the U.S. Census and Federal Housing Finance Agency and assessments of neighborhood safety from Streetscore. Using data that is not publicly accessible thanks to a data use agreement with Yelp, they evaluate the change in number of listings and reviews from Yelp in New York City over a five-year period from 2012 to 2016 and evaluate correlations with other measurements of neighborhood change. Inspired by findings from Zillow data on home prices [@Rascoff16], they find that the presence and number of reviews of a Starbucks in a neighborhood is correlated with an increase in housing prices. They further find that change in the number of grocery stores, laundromats, cafes, bars, restaurants, barbers, wine bars, and convenience stores is correlated with growth in a local college-educated population, an indicator of demographic change typical of gentrification. Following research claiming that restaurants generally cater to the demographics of their immediate surroundings [@Waldfogel08], they suggest that business openings could be a useful leading indicator of gentrification, predicting neighborhood change before other data sources. Of the gentrification models using social media to date, this is the simplest, and Yelp has an easy-to-use API that makes this methodology potentially ideal for wider use by policymakers. The following sections will explore whether it is possible to simplify this model even further, using only publicly accessible data to identify changing neighborhoods.
+
+## Data
+
+Following @Glaeser18, the present study will use three primary data sources: indicators of neighborhood change from the U.S. Census Bureau’s American Community Survey and the Federal Housing Finance Agency’s Home Price Index (HPI), as well as venue listings from Yelp. As the present paper is a test of a potential methodology, I will be further restricting my analysis to the New York City borough of Brooklyn for the sake of simplicity. Brooklyn is the most populous borough in New York, and contains neighborhoods like Williamsburg that have long been identified as gentrifying communities, making it a suitable test location for this research question [@Barton16; @Newman06]. Following Glaeser et al., I will be performing my analysis at the ZIP Code Tabulation Area (ZCTA) level. In this section, I will describe my data collection process using R [@RCoreTeam], including code used to import and clean the data.
+
+### American Community Survey
+
+The American Community Survey (ACS) is an annual household survey conducted by the U.S. Census Bureau, with 3.5 million randomly selected participants each year. From this data set, I will use the percentage of individuals with college degrees, the percentage of individuals between ages 25 and 34, and the percentage of individuals who are white for each of Brooklyn’s 38 ZIP Code Tabulation Areas. I will use the ACS 5-year estimates for the years 2008-2012 and 2013-2017, the two most recent periods available, which represents a one-year update over Glaeser’s 2018 analysis. I will use the “censusapi” R package to interface with the Census Bureau’s API to streamline the data collection process [@censusapi], and perform some simple data manipulation using the “dplyr” package to calculate the change in each percentage between the first and second period.
+
+To download the data for Brooklyn ZCTAs, I need a list of ZIP codes corresponding to each ZCTA in the borough. I downloaded this from an Excel file publicly available from the City University of New York that lists all ZIP codes in New York City. I then narrowed this to Brooklyn ZIPs by extracting borough names from a column containing neighborhood names for each ZIP code, and removed a single ZIP code (11425) that has no residents or businesses to reduce errors later in the analysis, as shown in the code below.
+
+```{r, eval=FALSE}
+url_zctalist <- "http://faculty.baruch.cuny.edu/geoportal/resources/nyc_geog/nyc_zcta10_to_puma10.xls"
+zcta_sheet <- read.xls(url_zctalist)
+zctas <- as.double(unique(zcta_sheet$zcta10))
+zcta_sheet$borough <- sub('....', '', zcta_sheet$pumaname)
+zcta_sheet$borough <- sub("([A-Za-z]+).*", "\\1", zcta_sheet$borough)
+zctas_bk <- zcta_sheet %>%
+  filter(grepl('Brooklyn', borough)) %>%
+  distinct(zcta10)
+zctas_bk <- as.double(zctas_bk$zcta10)
+zctas_bk <- zctas_bk[1:37]
+```
+
+Using this list of ZIP codes corresponding to each ZCTA, I then write a simple for loop that automates searches to the Census Bureau API, downloads the desired data for each borough, and combines the data into a single list for further analysis. Then, I perform some calculations using dplyr’s mutate feature to transform the data into the desired format. For example, I sum those with bachelor’s degrees, master's degrees, and professional degrees to attain a total number of college-educated residents, and calculate the percentage of college-educated residents manually. While I perform this analysis twice, once for 2008-2012 and once for 2013-2017 data, I will include only the code for 2017 below to avoid repetition. 
+
+```{r, eval=FALSE}
+census_zcta17 <- NULL
+for (f in zctas_bk) {
+  zctaget <- paste("zip code tabulation area:", f, sep="")  
+  temp <- getCensus(name = "acs/acs5",
+                      vintage = 2017,
+                      vars = c("B01003_001E", "B15003_022E", "B15003_023E", 
+                               "B15003_024E", "B15003_025E", "B01001_011E", 
+                               "B01001_012E", "B01001_035E", "B01001_036E", 
+                               "B03002_003E", "B17001_002E"), 
+                      region = zctaget, 
+                      key = cs_key)
+  census_zcta17 <- rbind(census_zcta17, temp)
+}
+
+census_zcta_percs17 <- census_zcta17 %>%
+  mutate(college17 = (B15003_022E + B15003_023E + B15003_024E + B15003_025E) / B01003_001E) %>%
+  mutate(youngadult17 = (B01001_011E + B01001_012E + B01001_035E + B01001_036E) / B01003_001E) %>%
+  mutate(white17 = B03002_003E / B01003_001E) %>%
+  mutate(pov17 = B17001_002E / B01003_001E) %>%
+  select(zip_code_tabulation_area, college17, youngadult17, white17, pov17)
+```
+
+```{r, eval=FALSE, include = FALSE}
+census_zcta12 <- NULL
+for (f in zctas_bk) {
+  zctaget <- paste("zip code tabulation area:", f, sep="")  
+  temp <- getCensus(name = "acs/acs5",
+                    vintage = 2012,
+                    vars = c("B01003_001E", "B15003_022E", "B15003_023E", 
+                             "B15003_024E", "B15003_025E", "B01001_011E", 
+                             "B01001_012E", "B01001_035E", "B01001_036E", 
+                             "B03002_003E", "B17001_002E"), 
+                    region = zctaget, 
+                    key = cs_key)
+  census_zcta12 <- rbind(census_zcta12, temp)
+}
+
+census_zcta_percs12 <- census_zcta12 %>%
+  mutate(college12 = (B15003_022E + B15003_023E + B15003_024E + B15003_025E) / B01003_001E) %>%
+  mutate(youngadult12 = (B01001_011E + B01001_012E + B01001_035E + B01001_036E) / B01003_001E) %>%
+  mutate(white12 = B03002_003E / B01003_001E) %>%
+  mutate(pov12 = B17001_002E / B01003_001E) %>%
+  select(zip_code_tabulation_area, college12, youngadult12, white12, pov12)
+```
+
+### Federal Housing Finance Agency
+As described in @Bogin16, the Federal Housing Finance Agency has constructed a repeat-sales index of housing prices across the U.S. by ZIP code and year, called the House Price Index (HPI). I will use this index to measure change in housing prices in Brooklyn between 2012 and 2017, another key indicator of gentrification and neighborhood change. The HPI data is not available through an API as of the time of publication, so an Excel file containing the indices was imported using the RCurl package (necessary because the file is in .xlsx format). The data is then narrowed down to Brooklyn and the years 2012-2017.
+
+```{r, eval=FALSE}
+url <- "https://www.fhfa.gov/DataTools/Downloads/Documents/HPI/HPI_AT_BDL_ZIP5.xlsx"
+destfile <- "fhfa_sheet.xlsx"
+curl::curl_download(url, destfile)
+fhfa_sheet <- read_excel(destfile, skip = 6)
+
+colnames(fhfa_sheet) <- c("zipcode", "year", "annualchg", "hpi", "hpi90", "hpi00")
+fhfa_sheet$zipcode <- as.numeric(fhfa_sheet$zipcode)
+fhfa_sheet_bk <- subset(fhfa_sheet, subset = zipcode %in% zctas_bk)
+
+fhfa_sheet_bk_1317 <- fhfa_sheet_bk %>% filter((year > 2012) & (year < 2018))
+fhfa_sheet_bk_1317$annualchg <- as.numeric(fhfa_sheet_bk_1317$annualchg)
+fhfa_sheet_bk_1317$hpi <- as.numeric(fhfa_sheet_bk_1317$hpi)
+```
+
+### Yelp
+
+Finally, I will also download business listings from Yelp’s API using the "yelpr" package [@yelpr]. Yelp is a popular site for business listings and reviews founded in 2004, and today lists over 100 million reviews worldwide. Yelp is also a particularly interesting data source for gentrification research as its relatively young, educated, and wealthy user demographics are typical of gentrifiers: half of its users earn more then $100,000 annually, 81% have college degrees, and about two-thirds are below the age of 55 [@Yelp]. I will restrict my analysis to only three business types: restaurants, coffee shops, and bars. The primary reasons for this are to simplify analysis and because these represent some of the most popular categories of businesses on Yelp, but there are also reasons to expect these types of businesses to have the greatest effect on gentrification. They have been noted to attract diverse visitors, a key driver of neighborhood change, [@Gibbons18; @Hristova16] and often reflect neighborhood demographics as they serve a primarily local clientele [@Waldfogel08]. They are also among the most significant predictors found in Glaeser et al.'s study. Another key difference between the current study and the study as conducted by Glaeser et al. is that historical Yelp data is not publicly accessible, and thus will not be used here. I can only access a snapshot of listings representing businesses that have not closed, a major weakness of the present analysis relative to Glaeser et al.’s work.
+
+I first attempted to download listings from Yelp with a simple radius search for the business category “restaurants” within a 11,000-meter radius of the center of Brooklyn. However, this search only returned 16 results, prompting me to explore alternative search methods. A follow-up search using a for loop to search by each ZCTA returned 389 results: a major improvement, but still far short of the over 15,000 listings that are returned in a web search on Yelp.com. However, this search helped me determine that shrinking the search radius would lead to a larger number of results. I next tried a loop that would search from 100 points dispersed across Brooklyn in a 10 x 10 grid (using equally spaced latitude and longitude coordinates) with a search radius of 1,000 meters. This search returned 905 results, more than twice the number from my previous attempt. Thus, I took this method to its logical conclusion by building a 70 x 70 grid of search points with a radius of 380 meters, enough to cover the borough. This represents a number close to the maximum possible, as users can only conduct 5,000 searches per day. This returned 4,743 results, still short of the number achieved by a web search. However, API results are limited to businesses with at least one review, so this may be closer to a full listing than it may seem. As this was the best result I could achieve given the query constraints, I rewrote the loop as a function to allow me to easily search for a variety of search terms (i.e. bars and coffee shops) using the 70 x 70 grid, delete duplicate entries, and save the results to a .rds file, as shown below. Also shown below are maps created with the "ggmap" package [@ggmap] showing the results from 10 x 10 grid search of restaurants, and the final results for restaurants (n = 4,743), coffee shops (n = 821), and bars (n = 962).
+
+``` {r, eval=FALSE}
+latsbk_70 <- seq(40.571474, 40.73911, length.out = 70)
+longsbk_70 <- seq(-73.855727, -74.04151, length.out = 70)
+
+yelp70x70 <- function(filename, catname) {
+  savename <- deparse(substitute(filename))
+  filename <- NULL
+  
+  for (lat in latsbk_70) {
+    for (long in longsbk_70) {
+      temp <- business_search(yelp_key, 
+                              latitude = lat,
+                              longitude = long,
+                              categories = catname,
+                              radius = 380) 
+      temp <- temp$businesses 
+      if(length(temp) > 0 && is.na(match('price', names(temp)))) {
+        temp$price <- NA
+      }
+      if(length(temp) > 0) {
+        temp <- temp %>%
+          mutate(zip = location$zip_code) %>%
+          mutate(lat = coordinates$latitude) %>%
+          mutate(long = coordinates$longitude) %>%
+          filter(zip %in% zctas_bk) %>%
+          select(alias, name, review_count, categories, rating, price, zip, lat, long)
+      }
+      filename <- rbind(filename, temp)
+    }
+  }
+  
+  filename <- unique(filename)
+  
+  saveRDS(filename, file = paste0(savename,'.rds'))
+}
+```
+
+```{r, include= FALSE}
+food_bk_ll10 <- readRDS("food_bk_ll10.rds")
+listings_bk_ll70 <- readRDS("listings_bk_ll70.rds")
+```
+
+```{r, echo=FALSE, out.width="49%", out.height="49%",fig.cap="Top: restaurant search results, 10 x 10 search. Bottom: restaurant, bar, and coffee shop results, 70 x 70 search.",fig.show='hold',fig.align='center',message= FALSE}
+
+qmplot(long, lat, data = food_bk_ll10, maptype = "toner-lite", size = I(0.5),
+       alpha = I(0.45))
+qmplot(long, lat, data = listings_bk_ll70, maptype = "toner-lite", size = I(0.5),
+         alpha = I(0.45), color = cat)
+```
+
+## Results
+
+Unfortunately, results from the methodological adaptations presented here do not seem promising as an alternative tool to predict gentrification. These results cannot confirm or refute Glaeser et al.’s findings due to the inferior dataset collected here. Gentrification is a phenomenon that occurs over time, and thus it is likely that longitudinal data is able to capture more relevant information about neighborhood change than cross-sectional data from the publicly available listings on the Yelp API. A comparison of my results with Glaeser et al.'s suggests that cross-sectional data from Yelp is not well-suited to this research question. However, I will nonetheless present selected findings from some data exploration and initial model testing.
+
+Following analysis from Hristova et al. [-@Hristova16] and Gibbons et al. [-@Gibbons18] that suggested gentrification tends to occur in communities with high rates of social deprivation as well as many venues and social interactions, I first used the “ggplot2” package [@ggplot2] to create a scatter plot that explores trends between the number of Yelp reviews in a specific ZCTA and its poverty rate, as displayed in Figure 2. Like geotagged tweets used in these two studies, Yelp reviews could be used as an equally plausible measure of the number of visits to various venues. The general trend suggests that communities with lower poverty rates have more Yelp reviews, perhaps a reflection of Yelp’s relatively affluent user base and the neighborhoods they tend to live (and eat) in. One glaring exception is Williamsburg, which has both a relatively high poverty rate and the highest number of Yelp reviews of any ZCTA in Brooklyn. This is not a surprise, as Williamsburg is perhaps the best-known example of gentrification in New York. However, this could suggest that an increase in Yelp reviews among higher-poverty neighborhoods (i.e., movement into the upper right corner of the plot) may act as a leading indicator of gentrification pressure. Further research with access to longitudinal data on reviews may be able to answer this question more definitively.
+
+```{r, include=FALSE}
+reviews_pov <- readRDS("reviews_pov.rds")
+allvars_bk <- readRDS("allvars_bk.rds")
+```
+
+```{r, echo=FALSE, out.width="49%", out.height="49%",fig.cap="ZCTAs plotted by poverty rate (x) and number of Yelp reviews of restaurants, cafes, and bars (y).",fig.show='hold',fig.align='center',message= FALSE}
+ggplot(reviews_pov, aes(pov,reviews)) +
+  geom_point(size = 2) +
+  geom_text(aes(label=ifelse(reviews > 60000, as.character("Williamsburg"),''),hjust=1.1))
+```
+
+To examine how my results compare to those presented by Glaeser et al., I also present a plot examining the change in each ZCTA’s college-educated population (those with a Bachelor’s degree or higher) and the total number of Yelp-rated restaurants, cafes, and bars in the community. In Glaeser et al.’s analysis, the change in the number of establishments across a variety of categories (including cafes, bars, and restaurants) was significantly correlated with the change in local college-educated population. The results presented in Figure 3 show only a weak, insignificant relationship between the current number of Yelp-rated food and drink establishments and the rate of change in the college-educated population. This suggests that the change in the number of establishments could be an important indicator of neighborhood change that cannot be captured by the current number of establishments alone. While the current number of establishments might measure locations with a larger number of local businesses, this does not necessarily correlate with neighborhood change.
+
+```{r, echo=FALSE, out.width="49%", out.height="49%",fig.cap="ZCTAs plotted by the change in their college-educated population from 2012 to 2017 (x) and current number of restaurants, cafes, and bars reviewed on Yelp (y).",fig.show='hold',fig.align='center',message= FALSE}
+ggplot(allvars_bk, aes(chg_college, total)) +
+  geom_point(size = 2) +
+  geom_smooth(method = "lm")
+```
+
+Next, I used the “corrplot” package to produce a visual correlation matrix of the variables from Census, FHFA, and Yelp data, as shown in Figure 4. Pearson’s correlation coefficients were calculated with pairwise deletion using the “rcorr” function included in the “Hmisc” package [@Hmisc], averting errors associated with several ZCTAs missing HPI information. As evidenced by the blank squares in the matrix, it becomes apparent that correlations between the gentrification indicators (Census and FHFA data) and Yelp data are almost all insignificant, while unsurprisingly correlations within datasets are high. For example, a high number of low-priced establishments is correlated with a high number of mid-priced establishments and the total number of bars, but not with a change in poverty or white population share. Only a few variables are significantly correlated with a change in the poverty rate, namely the number of cafes, and the number of reviews for expensive venues (those tagged with three or four dollar signs). It may seem counterintuitive that these are negatively correlated, implying that areas with more coffee shops are likely to have lower changes in the poverty rate. However, because the average value for the change in poverty rate in Brooklyn is already negative, a lower-than-average value would indicate a negative change in poverty rate, possibly (but not definitively) indicating that those living in poverty are being displaced.
+
+```{r, echo=FALSE, out.width="60%", out.height="60%",fig.cap="Correlation matrix of combined variables from Census, FHFA, and Yelp data.",fig.show='hold',fig.align='center',message= FALSE}
+allcorrs_bk <- rcorr(as.matrix(allvars_bk[2:20]))
+corrplot(allcorrs_bk$r, type="upper", order="alphabet", method="color", 
+         p.mat = allcorrs_bk$P, sig.level = 0.05, insig = "blank")
+```
+
+The original goal of this report was to identify a possible model for gentrifying neighborhoods using Yelp data, a model I planned to create using OLS regression. The correlation matrix highlights a couple potential pitfalls in completing this analysis: first, many of the independent variables are highly correlated, restricting my ability to evaluate which factor is responsible for possible changes in the dependent variable. However, this does not preclude models from being used as a tool for prediction, without examination of the role of each specific variable. Second, insignificant correlations may indicate that meaningful relationships between variables of interest do not exist. Beyond these concerns, it is also theoretically challenging to determine what control variables would be needed to isolate the effects of changes related to local business reviews. A large variety of factors could be responsible for neighborhood change, including factors like positive news coverage or advertising about an area, a single new development in a previously neglected community, a new employer opening nearby or new transit links opening to existing centers of employment, only some of which are even quantifiable enough to include in such a model.
+
+Nonetheless, I proceeded to test a few models supported by the evidence available, with few results. Based on findings from Glaeser et al., I produced a model testing effects of Yelp reviews by type of establishment on the share of population with a college degree, with results shown in the table below. While the effect of the number of reviews of bars and cafes were both highly significant, the magnitude of these effects is near-zero and the R-squared value of the model is relatively low, making it of limited use in predicting changes.
+
+```{r, echo=FALSE}
+lm_collegereviews <- lm(chg_college ~ bars_reviews + coffee_reviews + food_reviews, data = allvars_bk)
+export_summs(lm_collegereviews, digits=4)
+```
+
+Based on the correlation matrix results, I also estimated a couple of models testing the effects of the number of Yelp reviews, and of Yelp-listed establishments on local change in the poverty rate, finding similar results. As shown in the plot in Figure 5 produced using the “jtools” package [@jtools], effect sizes are generally very small and/or insignificant. While the number of restaurants and bars are both statistically significant in explaining the variance in poverty rate change, both effects are near-zero. Overall, the magnitude of this effect is marginal, and the overall explanatory power of these models is low, as evidenced by R-squared values at 0.31 (Model 1) and 0.14 (Model 2). Other models estimated with similar independent variables (i.e., the number of Yelp-reviewed establishments or the number of reviews) on other dependent variables like the House Price Index, or changes in young adult population share or white population share, yielded only insignificant results and very low predictive power.
+
+```{r, echo=FALSE, out.width="60%", out.height="60%",fig.cap="Comparing the magnitude and significance of two models predicting change in local poverty rates by ZCTA.",fig.show='hold',fig.align='center',message= FALSE}
+lm_povreviews <- lm(chg_pov ~ bars_reviews + coffee_reviews + food_reviews, data = allvars_bk)
+lm_povcount <- lm(chg_pov ~ bars_count + coffee_count + food_count, data = allvars_bk)
+plot_summs(lm_povcount, lm_povreviews)
+```
+
+## Discussion
+
+As shown in the preceding figures, the Yelp data collected here seems to be of limited use in predicting gentrification in Brooklyn at this time. Contrasting the results with earlier findings by Glaeser et al., the current study shows the obvious limitations of using cross-sectional data to investigate time-variant phenomena like gentrification. Though it would have been preferable to use the proprietary historical data used by Glaeser et al. in the present analysis, I was unable to obtain access to this data in the limited time available for this study. Additionally, I decided it did not fit with my goal of creating a model that could be a useful tool for city planners and other policymakers tasked with responding to gentrification concerns on the local level. Because these individuals are unlikely to pursue agreements with Yelp to use this data, I tested the possibility of using only publicly available data to create a predictive model. Unfortunately, this was not successful. However, this does not reflect on the validity of Glaeser et al.’s results, nor on the possibility of developing a model with a more robust dataset.
+
+The process still yielded a couple interesting findings. First, initial data exploration provided additional evidence that neighborhoods with relatively high rates of poverty and a large number of social media interactions may be at risk of gentrification. Williamsburg was highlighted in this study as an extreme case of gentrification, as well as a neighborhood with over 80,000 Yelp reviews and relatively high rates of poverty. Should other high-poverty neighborhoods see an increase in Yelp reviews, this may also be an indicator of gentrification, although the present analysis does not allow for a robust test of this assertion.
+
+Second, I have developed a replicable data collection process for those looking to download data from the Yelp API. Search results with basic search methods were incomplete, with a simple “restaurants in Brooklyn” search turning up only 16 listings in a borough of over 2.2 million residents. The method I used here automates searching at 4,900 distinct points in a grid across a selected community, maximizing results given the allowed number of daily queries. The function here produced over 4,700 results for the same restaurant search, a significant increase in results. Even so, this may not include every Yelp-listed restaurant in Brooklyn, an issue that may have also biased results. Researchers using Yelp data in the future should be careful to ensure that their queries are returning a realistic number of results, and future studies should work to further develop methods for efficient extraction of information from the Yelp API.
+
+Finally, this study leaves many questions open for further research. While present-day Yelp reviews may not be a useful predictor of gentrification, other data from Yelp or other social media sites may be. Social media data will undoubtedly continue to be a powerful tool for assessing many aspects of 21st-century life, and it is important for researchers to fully explore the wide range of research possibilities and develop new methods of working with these ever-expanding sources of data. With or without social media data, researchers should endeavor to create tools that urban practitioners can use to help their cities adapt to radical neighborhood change. Gentrification remains a controversial issue, and despite the rich academic literature on the topic, its antecedents and effects have still not been fully explored. The threat of gentrification continues to reach new cities, and thus the need for actionable information has never been greater. With further research, academia can be one crucial piece in solving the puzzle of equitable neighborhood change.
+
+## References
